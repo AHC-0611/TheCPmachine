@@ -1,10 +1,10 @@
-# theCP machine — AI Photo Generator
+# TheCPMachine — AI Photo Generator
 
 - **Create**: type a prompt → get an image.
 - **Combine**: upload 2–4 photos → AI blends them into one image (or 1 photo + prompt to edit it).
 
 ## Put it online (free, Vercel)
-1. Make a new GitHub repo (e.g. `thecp-machine`) and upload these files: `index.html`, `package.json`, `api/generate.js`.
+1. Make a new GitHub repo (e.g. `TheCPMachine`) and upload these files: `index.html`, `package.json`, `api/generate.js`.
 2. On vercel.com → **Add New → Project** → import the repo → **Deploy**.
 3. Make a free Cloudflare account and a Workers AI token at https://dash.cloudflare.com/profile/api-tokens
 4. In Vercel: **Project → Settings → Environment Variables** → add

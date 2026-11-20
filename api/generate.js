@@ -1,4 +1,4 @@
-// theCP machine — serverless image endpoint (Vercel)
+// TheCPMachine — serverless image endpoint (Vercel)
 // POST { prompt: string, images?: [{ mimeType, data(base64) }], aspect?: "1:1"|"16:9"|"9:16" }
 // -> { image: "data:image/png;base64,...", note?: string }
 

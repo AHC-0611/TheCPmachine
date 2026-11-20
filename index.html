@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>theCP machine — Cool Pictures</title>
+<title>TheCPMachine — Cool Pictures</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23111'/%3E%3Crect x='3' y='3' width='58' height='58' rx='13' fill='none' stroke='%23ff7a1a' stroke-width='4'/%3E%3Ctext x='32' y='43' font-family='Arial Black,Arial' font-weight='900' font-size='28' text-anchor='middle'%3E%3Ctspan fill='%23ff7a1a'%3EC%3C/tspan%3E%3Ctspan fill='%23fff'%3EP%3C/tspan%3E%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -91,7 +91,7 @@
 <body>
 <header>
   <div class="logo"><span><span class="c">C</span><span class="p">P</span></span></div>
-  <h1>the<span>CP</span> machine</h1>
+  <h1>The<span>CP</span>Machine</h1>
   <div class="tag">Cool Pictures. Made by machine.</div>
   <div class="credits" id="credits" title="Credits reset every day at midnight">
     <div class="bolt">⚡</div>
@@ -371,7 +371,7 @@ async function generate(){
 $("go").onclick = generate;
 $("again").onclick = generate;
 $("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) generate(); });
-$("dl").onclick = () => { const a = document.createElement("a"); a.href = lastImage; a.download = "thecp-machine.png"; a.click(); };
+$("dl").onclick = () => { const a = document.createElement("a"); a.href = lastImage; a.download = "TheCPMachine.png"; a.click(); };
 $("useIt").onclick = async () => {
   if (!lastImage) return;
   setMode("combine");
