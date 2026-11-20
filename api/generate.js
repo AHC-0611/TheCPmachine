@@ -24,6 +24,28 @@ function charge(ip, n) {
   if (spent.size > 5000) spent.clear();
   spent.set(keyFor(ip), used(ip) + n);
 }
+// Create images are loaded by the visitor's browser; if that fails it can ask for a refund.
+const tickets = new Map(); // ticket -> { ip, cost, t }
+function newTicket(ip, cost) {
+  if (tickets.size > 5000) tickets.clear();
+  const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  tickets.set(id, { ip, cost, t: Date.now() });
+  return id;
+}
+
+// Turn long API errors into something short and readable.
+function friendly(msg = "") {
+  if (/quota|RESOURCE_EXHAUSTED|rate.?limit|billing/i.test(msg)) {
+    return "Photo combining isn't available right now — the site's Gemini key needs billing turned on in Google AI Studio.";
+  }
+  if (/API key not valid|API_KEY_INVALID|permission/i.test(msg)) {
+    return "Photo combining isn't set up right — the site's Gemini key isn't working.";
+  }
+  if (/safety|blocked|prohibited/i.test(msg)) return "The AI wouldn't make that one. Try a different prompt or photos.";
+  msg = String(msg).split("\n")[0];
+  return msg.length > 160 ? msg.slice(0, 157) + "…" : msg;
+}
+
 function combinesLeftSite() {
   if (siteCombines.day !== today()) siteCombines = { day: today(), n: 0 };
   return SITE_COMBINE_CAP - siteCombines.n;
@@ -74,18 +96,15 @@ async function geminiImage(prompt, images, aspect) {
   return `data:${d.mimeType || d.mime_type || "image/png"};base64,${d.data}`;
 }
 
-// Free, no-key fallback for text-only generation.
-async function pollinationsImage(prompt, aspect) {
+// Free, no-key generator. The visitor's browser loads this URL itself
+// (so the free service sees each visitor separately and doesn't rate-limit the site).
+function pollinationsUrl(prompt, aspect) {
   const [w, h] = SIZES[aspect] || SIZES["1:1"];
   const seed = Math.floor(Math.random() * 1e9);
-  const url =
+  return (
     `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
-    `?width=${w}&height=${h}&seed=${seed}&nologo=true`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Backup generator error ${r.status}`);
-  const buf = Buffer.from(await r.arrayBuffer());
-  const type = r.headers.get("content-type") || "image/jpeg";
-  return `data:${type};base64,${buf.toString("base64")}`;
+    `?width=${w}&height=${h}&seed=${seed}&nologo=true&model=flux`
+  );
 }
 
 export default async function handler(req, res) {
@@ -95,7 +114,15 @@ export default async function handler(req, res) {
   if (req.method === "GET") return res.status(200).json(info());
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
 
-  let { prompt = "", images = [], aspect = "1:1" } = req.body || {};
+  let { prompt = "", images = [], aspect = "1:1", refund } = req.body || {};
+
+  // Browser couldn't load a Create image -> give the credit back.
+  if (refund) {
+    const tk = tickets.get(refund);
+    if (tk && tk.ip === ip) { tickets.delete(refund); charge(ip, -tk.cost); }
+    return res.status(200).json({ refunded: !!tk, ...info() });
+  }
+
   prompt = String(prompt).slice(0, 2000).trim();
   images = Array.isArray(images) ? images.slice(0, 4) : [];
   images = images.filter((i) => i && typeof i.data === "string" && /^image\//.test(i.mimeType || ""));
@@ -110,26 +137,26 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Out of credits for today! You get ${CREDITS_PER_DAY} new credits tomorrow.`, ...info() });
   }
 
-  try {
-    let image, note;
-    if (!isCombine) {
-      // Create: free generator first, Gemini as backup.
-      try { image = await pollinationsImage(prompt, aspect); }
-      catch { image = await geminiImage(prompt, [], aspect); note = "Made with Gemini."; }
-    } else {
-      if (combinesLeftSite() <= 0) {
-        return res.status(429).json({ error: "The machine hit today's combine limit for the whole site. Try again tomorrow!", ...info() });
-      }
-      image = await geminiImage(prompt, images, aspect);
-      siteCombines.n++;
-    }
+  if (!isCombine) {
+    // Create: hand the browser a free-generator link. Credit is refunded if it fails to load.
     charge(ip, cost);
-    return res.status(200).json({ image, note, ...info() });
+    const ticket = newTicket(ip, cost);
+    return res.status(200).json({ url: pollinationsUrl(prompt, aspect), ticket, ...info() });
+  }
+
+  if (combinesLeftSite() <= 0) {
+    return res.status(429).json({ error: "The machine hit today's combine limit for the whole site. Try again tomorrow!", ...info() });
+  }
+  try {
+    const image = await geminiImage(prompt, images, aspect);
+    siteCombines.n++;
+    charge(ip, cost);
+    return res.status(200).json({ image, ...info() });
   } catch (err) {
     const msg = err.message === "NO_KEY"
       ? "Photo combining needs a GEMINI_API_KEY set in Vercel (see README)."
-      : err.message;
-    return res.status(502).json({ error: msg + " (No credits were used.)", ...info() });
+      : friendly(err.message);
+    return res.status(502).json({ error: msg + " No credits were used.", ...info() });
   }
 }
 

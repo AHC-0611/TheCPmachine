@@ -289,6 +289,31 @@ function startLoading(){
 }
 function stopLoading(){ clearInterval(loadTimer); $("barFill").style.width = "100%"; $("loading").classList.add("hidden"); }
 
+// Keep error messages short and readable.
+function shortErr(m){
+  m = String(m || "Something went wrong — try again.");
+  if (/quota|RESOURCE_EXHAUSTED|billing/i.test(m)) return "That feature isn't available right now. No credits were used.";
+  m = m.split("\n")[0];
+  return m.length > 180 ? m.slice(0, 177) + "…" : m;
+}
+
+// Fetch a free-generator image in the browser, retrying if it's busy.
+async function loadFree(url){
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 60000);
+      const r = await fetch(url, { signal: ctrl.signal }); clearTimeout(to);
+      if (r.ok && (r.headers.get("content-type") || "").startsWith("image/")) {
+        const blob = await r.blob();
+        return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+      }
+    } catch {}
+    $("loadMsg").textContent = "Machine is busy — retrying";
+    await new Promise(r => setTimeout(r, 4000 + attempt * 3000));
+  }
+  throw new Error("busy");
+}
+
 // --- generate ---
 function show(src){
   lastImage = src;
@@ -318,15 +343,27 @@ async function generate(){
       })
     });
     const j = await r.json().catch(() => ({ error: "Server error — try again." }));
-    if (!r.ok || !j.image) { applyServer(j); throw new Error(j.error || "Something went wrong."); }
+    if (!r.ok || !(j.image || j.url)) { applyServer(j); throw new Error(shortErr(j.error)); }
+    let image = j.image;
+    if (j.url) {
+      // Create: load the picture straight from the free generator in this browser.
+      $("loadMsg").textContent = "Painting the light";
+      try { image = await loadFree(j.url); }
+      catch (e) {
+        const rf = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refund: j.ticket }) }).then(x => x.json()).catch(() => null);
+        applyServer(rf);
+        throw new Error("The picture machine is busy right now — wait a few seconds and try again. No credits were used.");
+      }
+    }
     setLocalUsed(localUsed() + cost);
     applyServer(j); renderCredits(true);
-    show(j.image);
-    const h = loadHist(); h.unshift(j.image); saveHist(h); renderHist();
+    show(image);
+    const h = loadHist(); h.unshift(image); saveHist(h); renderHist();
   } catch (e) {
     stopLoading();
     if (lastImage) show(lastImage); else $("empty").classList.remove("hidden");
-    $("err").textContent = e.message;
+    $("err").textContent = shortErr(e.message);
   } finally {
     delete $("go").dataset.busy; $("go").firstChild.textContent = "Generate "; renderCredits();
   }
