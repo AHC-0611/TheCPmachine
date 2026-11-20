@@ -3,17 +3,30 @@
 // -> { image: "data:image/png;base64,...", note?: string }
 
 const MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
-const DAILY_LIMIT = parseInt(process.env.DAILY_LIMIT || "20", 10);
 
-// Best-effort per-visitor limit (resets when the function cold-starts).
-const usage = new Map();
-function overLimit(ip) {
-  const day = new Date().toISOString().slice(0, 10);
-  const key = ip + "|" + day;
-  const n = (usage.get(key) || 0) + 1;
-  usage.set(key, n);
-  if (usage.size > 5000) usage.clear();
-  return n > DAILY_LIMIT;
+// ---- Credits (sized for ~25 people a day) ----
+// Each visitor: 10 credits/day. Create = 1 credit, Combine/Edit = 2 credits.
+// 25 people x 10 credits = 250 credits/day total.
+const CREDITS_PER_DAY = parseInt(process.env.CREDITS_PER_DAY || "10", 10);
+const COST_CREATE = 1;
+const COST_COMBINE = 2;
+// Safety cap on paid Gemini combines for the WHOLE site per day (~$0.04 each).
+const SITE_COMBINE_CAP = parseInt(process.env.SITE_COMBINE_CAP || "50", 10);
+
+// Best-effort memory (resets when Vercel restarts the function).
+const spent = new Map();
+let siteCombines = { day: "", n: 0 };
+const today = () => new Date().toISOString().slice(0, 10);
+const keyFor = (ip) => ip + "|" + today();
+const used = (ip) => spent.get(keyFor(ip)) || 0;
+const left = (ip) => Math.max(0, CREDITS_PER_DAY - used(ip));
+function charge(ip, n) {
+  if (spent.size > 5000) spent.clear();
+  spent.set(keyFor(ip), used(ip) + n);
+}
+function combinesLeftSite() {
+  if (siteCombines.day !== today()) siteCombines = { day: today(), n: 0 };
+  return SITE_COMBINE_CAP - siteCombines.n;
 }
 
 const SIZES = { "1:1": [1024, 1024], "16:9": [1344, 768], "9:16": [768, 1344] };
@@ -76,12 +89,11 @@ async function pollinationsImage(prompt, aspect) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
-
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "anon";
-  if (overLimit(ip)) {
-    return res.status(429).json({ error: `Daily limit reached (${DAILY_LIMIT} images). Come back tomorrow!` });
-  }
+  const info = () => ({ credits: left(ip), max: CREDITS_PER_DAY, costCreate: COST_CREATE, costCombine: COST_COMBINE });
+
+  if (req.method === "GET") return res.status(200).json(info());
+  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
 
   let { prompt = "", images = [], aspect = "1:1" } = req.body || {};
   prompt = String(prompt).slice(0, 2000).trim();
@@ -89,26 +101,35 @@ export default async function handler(req, res) {
   images = images.filter((i) => i && typeof i.data === "string" && /^image\//.test(i.mimeType || ""));
 
   if (!prompt && images.length < 2) {
-    return res.status(400).json({ error: "Type a prompt (or add at least 2 photos to combine)." });
+    return res.status(400).json({ error: "Type a prompt (or add at least 2 photos to combine).", ...info() });
+  }
+
+  const isCombine = images.length > 0;
+  const cost = isCombine ? COST_COMBINE : COST_CREATE;
+  if (left(ip) < cost) {
+    return res.status(429).json({ error: `Out of credits for today! You get ${CREDITS_PER_DAY} new credits tomorrow.`, ...info() });
   }
 
   try {
-    const image = await geminiImage(prompt, images, aspect);
-    return res.status(200).json({ image });
-  } catch (err) {
-    // Text-only? fall back to the free generator.
-    if (images.length === 0) {
-      try {
-        const image = await pollinationsImage(prompt, aspect);
-        return res.status(200).json({ image, note: "Made with the backup generator." });
-      } catch (e2) {
-        return res.status(502).json({ error: e2.message });
+    let image, note;
+    if (!isCombine) {
+      // Create: free generator first, Gemini as backup.
+      try { image = await pollinationsImage(prompt, aspect); }
+      catch { image = await geminiImage(prompt, [], aspect); note = "Made with Gemini."; }
+    } else {
+      if (combinesLeftSite() <= 0) {
+        return res.status(429).json({ error: "The machine hit today's combine limit for the whole site. Try again tomorrow!", ...info() });
       }
+      image = await geminiImage(prompt, images, aspect);
+      siteCombines.n++;
     }
+    charge(ip, cost);
+    return res.status(200).json({ image, note, ...info() });
+  } catch (err) {
     const msg = err.message === "NO_KEY"
       ? "Photo combining needs a GEMINI_API_KEY set in Vercel (see README)."
       : err.message;
-    return res.status(502).json({ error: msg });
+    return res.status(502).json({ error: msg + " (No credits were used.)", ...info() });
   }
 }
 

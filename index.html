@@ -22,8 +22,16 @@
   h1{font-family:"Space Grotesk";font-size:24px;margin:0}
   h1 span{color:var(--a)} h1 small{color:var(--muted);font-weight:500}
   .tag{color:var(--muted);font-size:14px;margin-left:auto}
+  .credits{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px 8px 10px}
+  .credits .bolt{width:26px;height:26px;border-radius:50%;background:var(--a);display:grid;place-items:center;font-size:14px}
+  .credits b{font:700 16px "Space Grotesk"} .credits small{color:var(--muted);font-size:12px;display:block;line-height:1.1}
+  .cbar{width:70px;height:6px;border-radius:99px;background:var(--panel2);overflow:hidden}
+  .cbar i{display:block;height:100%;background:linear-gradient(90deg,var(--a),#fff);transition:width .4s}
+  .credits.low{border-color:#ff5a3c} .credits.bump{animation:bump .4s}
+  @keyframes bump{50%{transform:scale(1.08)}}
+  .cost{display:inline-block;margin-left:6px;font:600 12px Inter;background:#0003;padding:3px 8px;border-radius:99px;vertical-align:middle}
   main{max-width:1100px;margin:0 auto;padding:16px 20px 60px;display:grid;grid-template-columns:420px 1fr;gap:20px}
-  @media(max-width:880px){main{grid-template-columns:1fr}.tag{display:none}}
+  @media(max-width:880px){main{grid-template-columns:1fr}.tag{display:none}.credits{margin-left:auto}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px}
   .tabs{display:flex;background:var(--panel2);border-radius:12px;padding:4px;margin-bottom:16px}
   .tabs button{flex:1;border:0;background:none;color:var(--muted);padding:10px;border-radius:9px;font:600 14px Inter;cursor:pointer}
@@ -85,6 +93,11 @@
   <div class="logo"><span><span class="c">C</span><span class="p">P</span></span></div>
   <h1>the<span>CP</span> machine</h1>
   <div class="tag">Cool Pictures. Made by machine.</div>
+  <div class="credits" id="credits" title="Credits reset every day at midnight">
+    <div class="bolt">⚡</div>
+    <div><b id="cNum">10</b> <span style="color:var(--muted)">/ <span id="cMax">10</span></span><small>credits today</small></div>
+    <div class="cbar"><i id="cBar" style="width:100%"></i></div>
+  </div>
 </header>
 
 <main>
@@ -122,7 +135,7 @@
       <button class="chip" data-v="9:16">Tall</button>
     </div>
 
-    <button class="go" id="go">Generate</button>
+    <button class="go" id="go">Generate <span class="cost" id="costTag">1 credit</span></button>
     <div class="hint" id="hint">Tip: be specific — subject, place, lighting, mood.</div>
     <div class="err" id="err"></div>
   </section>
@@ -155,6 +168,32 @@
 const $ = (id) => document.getElementById(id);
 let mode = "create", photos = [], style = "", aspect = "1:1", lastImage = null;
 
+// --- credits ---
+let credits = { left: 10, max: 10, create: 1, combine: 2 };
+const dayKey = () => new Date().toISOString().slice(0,10);
+function localUsed(){ try{ const o = JSON.parse(localStorage.getItem("cp_credits")||"{}"); return o.day === dayKey() ? o.used : 0; }catch{ return 0; } }
+function setLocalUsed(n){ try{ localStorage.setItem("cp_credits", JSON.stringify({ day: dayKey(), used: n })); }catch{} }
+function costNow(){ return mode === "combine" ? credits.combine : credits.create; }
+function renderCredits(bump){
+  $("cNum").textContent = credits.left; $("cMax").textContent = credits.max;
+  $("cBar").style.width = (100 * credits.left / credits.max) + "%";
+  $("credits").classList.toggle("low", credits.left <= 2);
+  if (bump){ $("credits").classList.remove("bump"); void $("credits").offsetWidth; $("credits").classList.add("bump"); }
+  const c = costNow();
+  $("costTag").textContent = c + (c === 1 ? " credit" : " credits");
+  if (!$("go").dataset.busy) $("go").disabled = credits.left < c;
+}
+function applyServer(j){
+  if (!j || typeof j.credits !== "number") return;
+  credits.max = j.max; credits.create = j.costCreate; credits.combine = j.costCombine;
+  // use whichever says fewer credits left (server memory can reset)
+  credits.left = Math.min(j.credits, Math.max(0, j.max - localUsed()));
+  renderCredits();
+}
+fetch("/api/generate").then(r => r.json()).then(applyServer).catch(() => {
+  credits.left = Math.max(0, credits.max - localUsed()); renderCredits();
+});
+
 // --- history (per-browser) ---
 function loadHist(){ try{ return JSON.parse(localStorage.getItem("pf_hist")||"[]"); }catch{ return []; } }
 function saveHist(h){ try{ localStorage.setItem("pf_hist", JSON.stringify(h.slice(0,12))); }catch{ /* storage full */ } }
@@ -176,6 +215,7 @@ function setMode(m){
   $("hint").textContent = m==="create"
     ? "Tip: be specific — subject, place, lighting, mood."
     : "Add 2–4 photos to combine, or 1 photo + a prompt to edit it.";
+  renderCredits();
 }
 $("tCreate").onclick = () => setMode("create");
 $("tCombine").onclick = () => setMode("combine");
@@ -263,8 +303,10 @@ async function generate(){
   if (mode === "combine" && imgs.length === 0) return $("err").textContent = "Add at least one photo.";
   if (mode === "combine" && imgs.length === 1 && !prompt) return $("err").textContent = "With one photo, tell it how to change it — or add another photo to combine.";
   if (style) prompt = prompt ? `${prompt}, ${style}` : `in ${style}`;
+  const cost = costNow();
+  if (credits.left < cost) return $("err").textContent = "Out of credits for today — come back tomorrow for " + credits.max + " more!";
 
-  $("go").disabled = true; $("go").textContent = "Generating…";
+  $("go").disabled = true; $("go").dataset.busy = "1"; $("go").firstChild.textContent = "Generating… ";
   $("empty").classList.add("hidden"); $("out").classList.add("hidden");
   $("actions").classList.add("hidden"); startLoading();
   try {
@@ -276,7 +318,9 @@ async function generate(){
       })
     });
     const j = await r.json().catch(() => ({ error: "Server error — try again." }));
-    if (!r.ok || !j.image) throw new Error(j.error || "Something went wrong.");
+    if (!r.ok || !j.image) { applyServer(j); throw new Error(j.error || "Something went wrong."); }
+    setLocalUsed(localUsed() + cost);
+    applyServer(j); renderCredits(true);
     show(j.image);
     const h = loadHist(); h.unshift(j.image); saveHist(h); renderHist();
   } catch (e) {
@@ -284,7 +328,7 @@ async function generate(){
     if (lastImage) show(lastImage); else $("empty").classList.remove("hidden");
     $("err").textContent = e.message;
   } finally {
-    $("go").disabled = false; $("go").textContent = "Generate";
+    delete $("go").dataset.busy; $("go").firstChild.textContent = "Generate "; renderCredits();
   }
 }
 $("go").onclick = generate;
