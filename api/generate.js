@@ -10,7 +10,7 @@ const MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const CREDITS_PER_DAY = parseInt(process.env.CREDITS_PER_DAY || "10", 10);
 const COST_CREATE = 1;
 const COST_COMBINE = 2;
-// Safety cap on paid Gemini combines for the WHOLE site per day (~$0.04 each).
+// Cap on combines for the WHOLE site per day (keeps inside Cloudflare's free daily allowance).
 const SITE_COMBINE_CAP = parseInt(process.env.SITE_COMBINE_CAP || "50", 10);
 
 // Best-effort memory (resets when Vercel restarts the function).
@@ -36,7 +36,7 @@ function newTicket(ip, cost) {
 // Turn long API errors into something short and readable.
 function friendly(msg = "") {
   if (/quota|RESOURCE_EXHAUSTED|rate.?limit|billing/i.test(msg)) {
-    return "Photo combining isn't available right now — the site's Gemini key needs billing turned on in Google AI Studio.";
+    return "Photo combining isn't available right now — the AI service is out of free uses for now. Try again later!";
   }
   if (/API key not valid|API_KEY_INVALID|permission/i.test(msg)) {
     return "Photo combining isn't set up right — the site's Gemini key isn't working.";
@@ -105,13 +105,45 @@ async function cloudflareImage(prompt) {
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, steps: 8 }),
+      body: JSON.stringify({ prompt, steps: 4 }),
     }
   );
   const j = await r.json().catch(() => ({}));
   const b64 = j?.result?.image;
   if (!r.ok || !b64) throw new Error(j?.errors?.[0]?.message || `Cloudflare error ${r.status}`);
   return `data:image/jpeg;base64,${b64}`;
+}
+
+// Cloudflare FLUX.2 [klein] — combines up to 4 photos (free daily allowance).
+async function cloudflareCombine(prompt, images, aspect) {
+  const acct = process.env.CLOUDFLARE_ACCOUNT_ID, token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!acct || !token) throw new Error("NO_CF");
+  const [w, h] = SIZES[aspect] || SIZES["1:1"];
+  let text;
+  if (images.length >= 2) {
+    text = `Combine the ${images.length} input images (image 0 to image ${images.length - 1}) into ONE single, realistic, natural-looking photo. ` +
+      `Keep every person, face, and object looking exactly like they do in their image. ` +
+      `${prompt ? "Instructions: " + prompt : "Blend them naturally into one scene with matching lighting."}`;
+  } else {
+    text = `Edit image 0. Keep the main subject looking the same. Instructions: ${prompt}`;
+  }
+  const form = new FormData();
+  form.append("prompt", text);
+  form.append("width", String(w));
+  form.append("height", String(h));
+  images.forEach((img, i) => {
+    form.append(`input_image_${i}`, new Blob([Buffer.from(img.data, "base64")], { type: img.mimeType }), `image${i}.jpg`);
+  });
+  const model = process.env.CF_COMBINE_MODEL || "@cf/black-forest-labs/flux-2-klein-4b";
+  const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/ai/run/${model}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const j = await r.json().catch(() => ({}));
+  const b64 = j?.result?.image;
+  if (!r.ok || !b64) throw new Error(j?.errors?.[0]?.message || `Cloudflare error ${r.status}`);
+  return b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
 }
 
 // Free, no-key generator. The visitor's browser loads this URL itself
@@ -176,14 +208,21 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "The machine hit today's combine limit for the whole site. Try again tomorrow!", ...info() });
   }
   try {
-    const image = await geminiImage(prompt, images, aspect);
+    // Cloudflare first; Gemini only if someone has set a Gemini key and Cloudflare isn't set up.
+    const useCF = process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN;
+    const image = useCF || !process.env.GEMINI_API_KEY
+      ? await cloudflareCombine(prompt, images, aspect)
+      : await geminiImage(prompt, images, aspect);
     siteCombines.n++;
     charge(ip, cost);
     return res.status(200).json({ image, ...info() });
   } catch (err) {
-    const msg = err.message === "NO_KEY"
-      ? "Photo combining needs a GEMINI_API_KEY set in Vercel (see README)."
-      : friendly(err.message);
+    console.error("Combine failed:", err.message);
+    const msg = err.message === "NO_CF" || err.message === "NO_KEY"
+      ? "Photo combining needs the Cloudflare keys set in Vercel (see README)."
+      : /neuron|daily|limit|quota|capacity/i.test(err.message)
+        ? "The machine used up today's free combines. Try again tomorrow!"
+        : friendly(err.message);
     return res.status(502).json({ error: msg + " No credits were used.", ...info() });
   }
 }
