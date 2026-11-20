@@ -18,19 +18,25 @@ const SITE_COMBINE_CAP = parseInt(process.env.SITE_COMBINE_CAP || "50", 10);
 const spent = new Map();
 let siteCombines = { day: "", n: 0 };
 const today = () => new Date().toISOString().slice(0, 10);
-const keyFor = (ip) => ip + "|" + today();
-const used = (ip) => spent.get(keyFor(ip)) || 0;
-const left = (ip) => Math.max(0, CREDITS_PER_DAY - used(ip));
-function charge(ip, n) {
-  if (spent.size > 5000) spent.clear();
-  spent.set(keyFor(ip), used(ip) + n);
+// Credits are counted PER DEVICE (each browser gets its own ID), so phones/laptops
+// on the same Wi-Fi each get their own credits. A household cap per internet
+// address stops someone from getting unlimited credits by clearing their browser.
+const HOUSEHOLD_CAP = parseInt(process.env.HOUSEHOLD_CAP || String(CREDITS_PER_DAY * 4), 10);
+const keyFor = (k) => k + "|" + today();
+const usedKey = (k) => spent.get(keyFor(k)) || 0;
+const used = (who) => usedKey(who.dev);
+const left = (who) => Math.max(0, Math.min(CREDITS_PER_DAY - usedKey(who.dev), HOUSEHOLD_CAP - usedKey(who.house)));
+function addKey(k, n) { spent.set(keyFor(k), Math.max(0, usedKey(k) + n)); }
+function charge(who, n) {
+  if (spent.size > 10000) spent.clear();
+  addKey(who.dev, n); addKey(who.house, n);
 }
 // Create images are loaded by the visitor's browser; if that fails it can ask for a refund.
 const tickets = new Map(); // ticket -> { ip, cost, t }
-function newTicket(ip, cost) {
+function newTicket(who, cost) {
   if (tickets.size > 5000) tickets.clear();
   const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  tickets.set(id, { ip, cost, t: Date.now() });
+  tickets.set(id, { dev: who.dev, house: who.house, cost, t: Date.now() });
   return id;
 }
 
@@ -171,7 +177,9 @@ function pollinationsUrl(prompt, aspect) {
 
 export default async function handler(req, res) {
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "anon";
-  const info = () => ({ credits: left(ip), max: CREDITS_PER_DAY, costCreate: COST_CREATE, costCombine: COST_COMBINE });
+  const devId = String(req.headers["x-cp-device"] || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 64);
+  const who = { dev: devId ? "d:" + devId : "ip:" + ip, house: "h:" + ip };
+  const info = () => ({ credits: left(who), max: CREDITS_PER_DAY, costCreate: COST_CREATE, costCombine: COST_COMBINE });
 
   if (req.method === "GET") return res.status(200).json(info());
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
@@ -181,7 +189,7 @@ export default async function handler(req, res) {
   // Browser couldn't load a Create image -> give the credit back.
   if (refund) {
     const tk = tickets.get(refund);
-    if (tk && tk.ip === ip) { tickets.delete(refund); charge(ip, -tk.cost); }
+    if (tk && tk.dev === who.dev) { tickets.delete(refund); charge(who, -tk.cost); }
     return res.status(200).json({ refunded: !!tk, ...info() });
   }
 
@@ -195,14 +203,14 @@ export default async function handler(req, res) {
 
   const isCombine = images.length > 0;
   const cost = isCombine ? COST_COMBINE : COST_CREATE;
-  if (left(ip) < cost) {
+  if (left(who) < cost) {
     return res.status(429).json({ error: `Out of credits for today! You get ${CREDITS_PER_DAY} new credits tomorrow.`, ...info() });
   }
 
   if (!isCombine && process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) {
     try {
       const image = await cloudflareImage(prompt);
-      charge(ip, cost);
+      charge(who, cost);
       return res.status(200).json({ image, ...info() });
     } catch (e) {
       console.error("Cloudflare failed, using backup:", e.message); // falls through to free backup
@@ -211,8 +219,8 @@ export default async function handler(req, res) {
 
   if (!isCombine) {
     // Create backup: hand the browser a free-generator link. Credit is refunded if it fails to load.
-    charge(ip, cost);
-    const ticket = newTicket(ip, cost);
+    charge(who, cost);
+    const ticket = newTicket(who, cost);
     return res.status(200).json({ url: pollinationsUrl(prompt, aspect), ticket, ...info() });
   }
 
@@ -226,7 +234,7 @@ export default async function handler(req, res) {
       ? await cloudflareCombine(prompt, images, aspect, dims)
       : await geminiImage(prompt, images, aspect);
     siteCombines.n++;
-    charge(ip, cost);
+    charge(who, cost);
     return res.status(200).json({ image, ...info() });
   } catch (err) {
     console.error("Combine failed:", err.message);

@@ -189,6 +189,16 @@ const $ = (id) => document.getElementById(id);
 const store = { combine: [], edit: [] };
 let mode = "create", photos = store.combine, style = "", aspect = "1:1", lastImage = null, editDims = null;
 
+// --- device ID: each browser gets its own credits ---
+const DEVICE_ID = (() => {
+  try {
+    let id = localStorage.getItem("cp_device");
+    if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); localStorage.setItem("cp_device", id); }
+    return id;
+  } catch { return ""; }
+})();
+const API_HEADERS = { "Content-Type": "application/json", "x-cp-device": DEVICE_ID };
+
 // --- credits ---
 let credits = { left: 10, max: 10, create: 1, combine: 2 };
 const dayKey = () => new Date().toISOString().slice(0,10);
@@ -211,7 +221,7 @@ function applyServer(j){
   credits.left = Math.min(j.credits, Math.max(0, j.max - localUsed()));
   renderCredits();
 }
-fetch("/api/generate").then(r => r.json()).then(applyServer).catch(() => {
+fetch("/api/generate", { headers: API_HEADERS }).then(r => r.json()).then(applyServer).catch(() => {
   credits.left = Math.max(0, credits.max - localUsed()); renderCredits();
 });
 
@@ -383,7 +393,7 @@ async function generate(){
   $("actions").classList.add("hidden"); startLoading();
   try {
     const r = await fetch("/api/generate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: API_HEADERS,
       body: JSON.stringify({
         prompt, aspect, dims: aspect === "orig" ? editDims : undefined,
         images: imgs.map(d => ({ mimeType: d.slice(5, d.indexOf(";")), data: d.split(",")[1] }))
@@ -397,7 +407,7 @@ async function generate(){
       $("loadMsg").textContent = "Painting the light";
       try { image = await loadFree(j.url); }
       catch (e) {
-        const rf = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+        const rf = await fetch("/api/generate", { method: "POST", headers: API_HEADERS,
           body: JSON.stringify({ refund: j.ticket }) }).then(x => x.json()).catch(() => null);
         applyServer(rf);
         throw new Error("The picture machine is busy right now — wait a few seconds and try again. No credits were used.");
