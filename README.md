@@ -9,6 +9,7 @@
 3. Get a free Gemini key at https://aistudio.google.com/apikey
 4. In Vercel: **Project → Settings → Environment Variables** → add
    - `GEMINI_API_KEY` = your key
+   - `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` = Cloudflare Workers AI (better free Create images)
    - (optional) `CREDITS_PER_DAY` = credits per visitor per day (default 10)
    - (optional) `SITE_COMBINE_CAP` = max photo combines for the whole site per day (default 50)
 5. **Deployments → ⋯ → Redeploy** so the key takes effect.

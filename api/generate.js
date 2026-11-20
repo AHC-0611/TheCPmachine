@@ -96,6 +96,24 @@ async function geminiImage(prompt, images, aspect) {
   return `data:${d.mimeType || d.mime_type || "image/png"};base64,${d.data}`;
 }
 
+// Cloudflare Workers AI (free 10,000 neurons/day ≈ 170 images). Used for Create when set up.
+async function cloudflareImage(prompt) {
+  const acct = process.env.CLOUDFLARE_ACCOUNT_ID, token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!acct || !token) throw new Error("NO_CF");
+  const r = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${acct}/ai/run/@cf/black-forest-labs/flux-1-schnell`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, steps: 8 }),
+    }
+  );
+  const j = await r.json().catch(() => ({}));
+  const b64 = j?.result?.image;
+  if (!r.ok || !b64) throw new Error(j?.errors?.[0]?.message || `Cloudflare error ${r.status}`);
+  return `data:image/jpeg;base64,${b64}`;
+}
+
 // Free, no-key generator. The visitor's browser loads this URL itself
 // (so the free service sees each visitor separately and doesn't rate-limit the site).
 function pollinationsUrl(prompt, aspect) {
@@ -137,8 +155,18 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Out of credits for today! You get ${CREDITS_PER_DAY} new credits tomorrow.`, ...info() });
   }
 
+  if (!isCombine && process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) {
+    try {
+      const image = await cloudflareImage(prompt);
+      charge(ip, cost);
+      return res.status(200).json({ image, ...info() });
+    } catch (e) {
+      console.error("Cloudflare failed, using backup:", e.message); // falls through to free backup
+    }
+  }
+
   if (!isCombine) {
-    // Create: hand the browser a free-generator link. Credit is refunded if it fails to load.
+    // Create backup: hand the browser a free-generator link. Credit is refunded if it fails to load.
     charge(ip, cost);
     const ticket = newTicket(ip, cost);
     return res.status(200).json({ url: pollinationsUrl(prompt, aspect), ticket, ...info() });
