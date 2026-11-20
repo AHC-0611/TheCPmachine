@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>theCP machine — Cool Pictures</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23111'/%3E%3Crect x='3' y='3' width='58' height='58' rx='13' fill='none' stroke='%23ff7a1a' stroke-width='4'/%3E%3Ctext x='32' y='43' font-family='Arial Black,Arial' font-weight='900' font-size='28' text-anchor='middle'%3E%3Ctspan fill='%23ff7a1a'%3EC%3C/tspan%3E%3Ctspan fill='%23fff'%3EP%3C/tspan%3E%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0c0a09; --panel:#161210; --panel2:#1e1916; --line:#33281f;
+    --text:#f6f2ee; --muted:#a8a0a0; --a:#ff7a1a; --b:#ff8f2e; --c:#ffb066;
+    --grad:linear-gradient(120deg,var(--a),var(--b) 55%,var(--c));
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;min-height:100vh;
+    background-image:radial-gradient(800px 400px at 10% -10%,#ff7a1a22,transparent),radial-gradient(700px 400px at 100% 0%,#ffffff0d,transparent)}
+  header{max-width:1100px;margin:0 auto;padding:28px 20px 8px;display:flex;align-items:center;gap:12px}
+  .logo{width:46px;height:46px;border-radius:13px;background:#111;border:3px solid var(--a);display:grid;place-items:center;font:900 21px/1 "Space Grotesk";letter-spacing:-1px;box-shadow:0 0 18px #ff7a1a55}
+  .logo .c{color:var(--a)} .logo .p{color:#fff}
+  h1{font-family:"Space Grotesk";font-size:24px;margin:0}
+  h1 span{color:var(--a)} h1 small{color:var(--muted);font-weight:500}
+  .tag{color:var(--muted);font-size:14px;margin-left:auto}
+  main{max-width:1100px;margin:0 auto;padding:16px 20px 60px;display:grid;grid-template-columns:420px 1fr;gap:20px}
+  @media(max-width:880px){main{grid-template-columns:1fr}.tag{display:none}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px}
+  .tabs{display:flex;background:var(--panel2);border-radius:12px;padding:4px;margin-bottom:16px}
+  .tabs button{flex:1;border:0;background:none;color:var(--muted);padding:10px;border-radius:9px;font:600 14px Inter;cursor:pointer}
+  .tabs button.on{background:var(--grad);color:#fff}
+  label.h{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 8px}
+  textarea{width:100%;min-height:110px;resize:vertical;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font:15px Inter;outline:none}
+  textarea:focus{border-color:var(--a)}
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:16px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s;font-size:14px}
+  .drop.over,.drop:hover{border-color:var(--a);color:var(--text);background:#ff7a1a10}
+  .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+  .thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .thumb button{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:0;background:#000a;color:#fff;cursor:pointer;font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:7px 11px;border-radius:999px;font:500 13px Inter;cursor:pointer}
+  .chip.on{border-color:transparent;background:var(--grad)}
+  .go{width:100%;margin-top:18px;border:0;border-radius:14px;padding:15px;font:700 16px "Space Grotesk";color:#fff;background:var(--grad);cursor:pointer;transition:transform .1s, opacity .2s}
+  .go:active{transform:scale(.98)} .go:disabled{opacity:.5;cursor:wait}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  .stage{min-height:460px;display:flex;flex-direction:column}
+  .result{flex:1;display:grid;place-items:center;background:var(--panel2);border-radius:14px;overflow:hidden;position:relative;min-height:400px}
+  .result img{max-width:100%;max-height:640px;display:block}
+  .empty{color:var(--muted);text-align:center;padding:30px}
+  .empty b{display:block;font:700 20px "Space Grotesk";color:var(--text);margin-bottom:6px}
+  /* ---- machine loading animation ---- */
+  #loading{display:flex;flex-direction:column;align-items:center;gap:18px}
+  .machine{position:relative;width:200px;height:200px}
+  .ring{position:absolute;inset:0;border-radius:50%;border:3px dashed #ff7a1a66;animation:spin 9s linear infinite}
+  .ring.r2{inset:18px;border:3px solid transparent;border-top-color:var(--a);border-right-color:var(--a);animation:spin 1.4s cubic-bezier(.6,.1,.4,.9) infinite}
+  .ring.r3{inset:36px;border:3px solid transparent;border-bottom-color:#fff;border-left-color:#fff;animation:spin 2.2s linear infinite reverse}
+  .core{position:absolute;inset:58px;border-radius:18px;background:#111;border:3px solid var(--a);display:grid;place-items:center;overflow:hidden;
+        font:900 34px/1 "Space Grotesk";letter-spacing:-1px;animation:pulse 1.6s ease-in-out infinite}
+  .core .c{color:var(--a)} .core .p{color:#fff}
+  .core::after{content:"";position:absolute;left:0;right:0;height:30%;background:linear-gradient(180deg,transparent,#ff7a1a66,transparent);animation:scan 1.3s linear infinite}
+  .spark{position:absolute;width:8px;height:8px;border-radius:2px;background:var(--a);top:50%;left:50%;margin:-4px;
+         animation:orbit 2.4s linear infinite;box-shadow:0 0 10px var(--a)}
+  .spark:nth-child(5){animation-delay:-.8s;background:#fff;box-shadow:0 0 10px #fff}
+  .spark:nth-child(6){animation-delay:-1.6s}
+  .bar{width:220px;height:8px;border-radius:99px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--a),#fff);border-radius:99px;transition:width .4s ease}
+  .loadmsg{font:600 15px "Space Grotesk";color:var(--text);min-height:20px;text-align:center}
+  .loadmsg::after{content:"▌";color:var(--a);animation:blink .8s steps(1) infinite;margin-left:2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pulse{50%{box-shadow:0 0 28px #ff7a1a99;transform:scale(1.05)}}
+  @keyframes scan{from{top:-30%}to{top:100%}}
+  @keyframes orbit{from{transform:rotate(0) translateX(100px) rotate(0)}to{transform:rotate(360deg) translateX(100px) rotate(-360deg)}}
+  @keyframes blink{50%{opacity:0}}
+  .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:10px 14px;border-radius:10px;font:600 14px Inter;cursor:pointer}
+  .btn:hover{border-color:var(--a)}
+  .err{color:#ff8a8a;font-size:14px;margin-top:10px}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:14px}
+  .gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;border:1px solid var(--line)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><span><span class="c">C</span><span class="p">P</span></span></div>
+  <h1>the<span>CP</span> machine</h1>
+  <div class="tag">Cool Pictures. Made by machine.</div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="tabs">
+      <button id="tCreate" class="on">✨ Create</button>
+      <button id="tCombine">🧩 Combine photos</button>
+    </div>
+
+    <div id="photoBox" class="hidden">
+      <label class="h" id="photoLabel">Your photos (2–4)</label>
+      <div class="drop" id="drop">📁 Click or drag photos here</div>
+      <input type="file" id="file" accept="image/*" multiple hidden />
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+
+    <label class="h" id="promptLabel">Describe your image</label>
+    <textarea id="prompt" placeholder="A cat astronaut floating above Earth, cinematic lighting"></textarea>
+
+    <label class="h">Style</label>
+    <div class="chips" id="styles">
+      <button class="chip on" data-v="">None</button>
+      <button class="chip" data-v="photorealistic, 4k photo">Realistic</button>
+      <button class="chip" data-v="anime style">Anime</button>
+      <button class="chip" data-v="3D Pixar-style render">3D cartoon</button>
+      <button class="chip" data-v="oil painting">Painting</button>
+      <button class="chip" data-v="pixel art">Pixel art</button>
+      <button class="chip" data-v="cyberpunk neon">Cyberpunk</button>
+    </div>
+
+    <label class="h">Shape</label>
+    <div class="chips" id="aspects">
+      <button class="chip on" data-v="1:1">Square</button>
+      <button class="chip" data-v="16:9">Wide</button>
+      <button class="chip" data-v="9:16">Tall</button>
+    </div>
+
+    <button class="go" id="go">Generate</button>
+    <div class="hint" id="hint">Tip: be specific — subject, place, lighting, mood.</div>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="card stage">
+    <div class="result" id="result">
+      <div class="empty" id="empty"><b>Your cool picture shows up here</b>Type a prompt or add photos, then hit Generate.</div>
+      <div class="empty hidden" id="loading">
+        <div class="machine">
+          <div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
+          <div class="spark"></div><div class="spark"></div><div class="spark"></div>
+          <div class="core"><span><span class="c">C</span><span class="p">P</span></span></div>
+        </div>
+        <div class="bar"><i id="barFill"></i></div>
+        <div class="loadmsg" id="loadMsg">Starting the machine</div>
+      </div>
+      <img id="out" class="hidden" alt="Generated image" />
+    </div>
+    <div class="actions hidden" id="actions">
+      <button class="btn" id="dl">⬇ Download</button>
+      <button class="btn" id="again">🔁 Try again</button>
+      <button class="btn" id="useIt">🧩 Use in Combine</button>
+    </div>
+    <label class="h">Recent</label>
+    <div class="gallery" id="gallery"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let mode = "create", photos = [], style = "", aspect = "1:1", lastImage = null;
+
+// --- history (per-browser) ---
+function loadHist(){ try{ return JSON.parse(localStorage.getItem("pf_hist")||"[]"); }catch{ return []; } }
+function saveHist(h){ try{ localStorage.setItem("pf_hist", JSON.stringify(h.slice(0,12))); }catch{ /* storage full */ } }
+function renderHist(){
+  const g = $("gallery"); g.innerHTML = "";
+  loadHist().forEach(src => { const i = new Image(); i.src = src; i.onclick = () => show(src); g.appendChild(i); });
+}
+
+// --- tabs ---
+function setMode(m){
+  mode = m;
+  $("tCreate").classList.toggle("on", m==="create");
+  $("tCombine").classList.toggle("on", m==="combine");
+  $("photoBox").classList.toggle("hidden", m==="create");
+  $("promptLabel").textContent = m==="create" ? "Describe your image" : "How should they be combined? (optional)";
+  $("prompt").placeholder = m==="create"
+    ? "A cat astronaut floating above Earth, cinematic lighting"
+    : "Put the person from photo 1 standing next to the car in photo 2 at sunset";
+  $("hint").textContent = m==="create"
+    ? "Tip: be specific — subject, place, lighting, mood."
+    : "Add 2–4 photos to combine, or 1 photo + a prompt to edit it.";
+}
+$("tCreate").onclick = () => setMode("create");
+$("tCombine").onclick = () => setMode("combine");
+
+// --- chips ---
+function chipGroup(id, cb){
+  $(id).addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if(!b) return;
+    [...$(id).children].forEach(c => c.classList.remove("on"));
+    b.classList.add("on"); cb(b.dataset.v);
+  });
+}
+chipGroup("styles", v => style = v);
+chipGroup("aspects", v => aspect = v);
+
+// --- photos: shrink to keep uploads small ---
+function shrink(file){
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1024, s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = reject; img.src = url;
+  });
+}
+async function addFiles(files){
+  for (const f of files) {
+    if (!f.type.startsWith("image/") || photos.length >= 4) continue;
+    try { photos.push(await shrink(f)); } catch {}
+  }
+  renderThumbs();
+}
+function renderThumbs(){
+  const t = $("thumbs"); t.innerHTML = "";
+  photos.forEach((src, i) => {
+    const d = document.createElement("div"); d.className = "thumb";
+    d.innerHTML = `<img src="${src}"><button title="Remove">✕</button>`;
+    d.querySelector("button").onclick = () => { photos.splice(i,1); renderThumbs(); };
+    t.appendChild(d);
+  });
+  $("photoLabel").textContent = `Your photos (${photos.length}/4)`;
+}
+$("drop").onclick = () => $("file").click();
+$("file").onchange = e => { addFiles(e.target.files); e.target.value = ""; };
+["dragover","dragenter"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave","drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => addFiles(e.dataTransfer.files));
+document.addEventListener("paste", e => {
+  if (mode !== "combine") return;
+  const files = [...(e.clipboardData?.files || [])]; if (files.length) addFiles(files);
+});
+
+// --- loading animation ---
+const MSGS = ["Starting the machine","Warming up the gears","Mixing the pixels","Adding extra cool","Painting the light","Polishing every pixel","Almost there"];
+let loadTimer = null;
+function startLoading(){
+  let i = 0, pct = 4;
+  $("loadMsg").textContent = MSGS[0]; $("barFill").style.width = pct + "%";
+  $("loading").classList.remove("hidden");
+  loadTimer = setInterval(() => {
+    i = Math.min(i + 1, MSGS.length - 1);
+    $("loadMsg").textContent = MSGS[i];
+    pct = Math.min(94, pct + (100 - pct) * 0.18);   // slows down near the end
+    $("barFill").style.width = pct + "%";
+  }, 1800);
+}
+function stopLoading(){ clearInterval(loadTimer); $("barFill").style.width = "100%"; $("loading").classList.add("hidden"); }
+
+// --- generate ---
+function show(src){
+  lastImage = src;
+  $("empty").classList.add("hidden"); stopLoading();
+  $("out").src = src; $("out").classList.remove("hidden"); $("actions").classList.remove("hidden");
+}
+async function generate(){
+  $("err").textContent = "";
+  let prompt = $("prompt").value.trim();
+  const imgs = mode === "combine" ? photos : [];
+  if (mode === "create" && !prompt) return $("err").textContent = "Type what you want to see first.";
+  if (mode === "combine" && imgs.length === 0) return $("err").textContent = "Add at least one photo.";
+  if (mode === "combine" && imgs.length === 1 && !prompt) return $("err").textContent = "With one photo, tell it how to change it — or add another photo to combine.";
+  if (style) prompt = prompt ? `${prompt}, ${style}` : `in ${style}`;
+
+  $("go").disabled = true; $("go").textContent = "Generating…";
+  $("empty").classList.add("hidden"); $("out").classList.add("hidden");
+  $("actions").classList.add("hidden"); startLoading();
+  try {
+    const r = await fetch("/api/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt, aspect,
+        images: imgs.map(d => ({ mimeType: d.slice(5, d.indexOf(";")), data: d.split(",")[1] }))
+      })
+    });
+    const j = await r.json().catch(() => ({ error: "Server error — try again." }));
+    if (!r.ok || !j.image) throw new Error(j.error || "Something went wrong.");
+    show(j.image);
+    const h = loadHist(); h.unshift(j.image); saveHist(h); renderHist();
+  } catch (e) {
+    stopLoading();
+    if (lastImage) show(lastImage); else $("empty").classList.remove("hidden");
+    $("err").textContent = e.message;
+  } finally {
+    $("go").disabled = false; $("go").textContent = "Generate";
+  }
+}
+$("go").onclick = generate;
+$("again").onclick = generate;
+$("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) generate(); });
+$("dl").onclick = () => { const a = document.createElement("a"); a.href = lastImage; a.download = "thecp-machine.png"; a.click(); };
+$("useIt").onclick = async () => {
+  if (!lastImage) return;
+  setMode("combine");
+  if (photos.length < 4) {
+    const blob = await (await fetch(lastImage)).blob();
+    photos.push(await shrink(new File([blob], "gen.png", { type: blob.type })));
+    renderThumbs();
+  }
+};
+
+renderHist();
+</script>
+</body>
+</html>
