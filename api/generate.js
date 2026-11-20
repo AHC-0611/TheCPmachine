@@ -1,5 +1,6 @@
 // TheCPMachine — serverless image endpoint (Vercel)
-// POST { prompt: string, images?: [{ mimeType, data(base64) }], aspect?: "1:1"|"16:9"|"9:16" }
+// POST { prompt, images?: [{ mimeType, data(base64) }], aspect?: "1:1"|"16:9"|"9:16"|"orig", dims?: {w,h} }
+// Create = no images, Edit = 1 image, Combine = 2–4 images.
 // -> { image: "data:image/png;base64,...", note?: string }
 
 const MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
@@ -115,17 +116,28 @@ async function cloudflareImage(prompt) {
 }
 
 // Cloudflare FLUX.2 [klein] — combines up to 4 photos (free daily allowance).
-async function cloudflareCombine(prompt, images, aspect) {
+// "orig" = keep the uploaded photo's shape (longest side 1024, multiples of 16).
+function sizeFor(aspect, dims) {
+  if (aspect === "orig" && dims && dims.w > 0 && dims.h > 0) {
+    const s = 1024 / Math.max(dims.w, dims.h);
+    const r16 = (n) => Math.max(256, Math.round((n * s) / 16) * 16);
+    return [r16(dims.w), r16(dims.h)];
+  }
+  return SIZES[aspect] || SIZES["1:1"];
+}
+
+async function cloudflareCombine(prompt, images, aspect, dims) {
   const acct = process.env.CLOUDFLARE_ACCOUNT_ID, token = process.env.CLOUDFLARE_API_TOKEN;
   if (!acct || !token) throw new Error("NO_CF");
-  const [w, h] = SIZES[aspect] || SIZES["1:1"];
+  const [w, h] = sizeFor(aspect, dims);
   let text;
   if (images.length >= 2) {
     text = `Combine the ${images.length} input images (image 0 to image ${images.length - 1}) into ONE single, realistic, natural-looking photo. ` +
       `Keep every person, face, and object looking exactly like they do in their image. ` +
       `${prompt ? "Instructions: " + prompt : "Blend them naturally into one scene with matching lighting."}`;
   } else {
-    text = `Edit image 0. Keep the main subject looking the same. Instructions: ${prompt}`;
+    text = `Edit image 0. Keep everything that the instructions don't mention exactly the same — ` +
+      `same person, face, pose and framing. Only change this: ${prompt}`;
   }
   const form = new FormData();
   form.append("prompt", text);
@@ -164,7 +176,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") return res.status(200).json(info());
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
 
-  let { prompt = "", images = [], aspect = "1:1", refund } = req.body || {};
+  let { prompt = "", images = [], aspect = "1:1", refund, dims } = req.body || {};
 
   // Browser couldn't load a Create image -> give the credit back.
   if (refund) {
@@ -211,7 +223,7 @@ export default async function handler(req, res) {
     // Cloudflare first; Gemini only if someone has set a Gemini key and Cloudflare isn't set up.
     const useCF = process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN;
     const image = useCF || !process.env.GEMINI_API_KEY
-      ? await cloudflareCombine(prompt, images, aspect)
+      ? await cloudflareCombine(prompt, images, aspect, dims)
       : await geminiImage(prompt, images, aspect);
     siteCombines.n++;
     charge(ip, cost);

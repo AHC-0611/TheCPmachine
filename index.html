@@ -36,6 +36,9 @@
   .tabs{display:flex;background:var(--panel2);border-radius:12px;padding:4px;margin-bottom:16px}
   .tabs button{flex:1;border:0;background:none;color:var(--muted);padding:10px;border-radius:9px;font:600 14px Inter;cursor:pointer}
   .tabs button.on{background:var(--grad);color:#fff}
+  @media(max-width:520px){.tabs button{font-size:12.5px;padding:9px 4px}}
+  .thumbs.single{grid-template-columns:1fr;max-width:240px}
+  .thumbs.single .thumb{aspect-ratio:auto} .thumbs.single .thumb img{height:auto;max-height:240px;object-fit:contain;background:#000}
   label.h{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 8px}
   textarea{width:100%;min-height:110px;resize:vertical;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font:15px Inter;outline:none}
   textarea:focus{border-color:var(--a)}
@@ -104,7 +107,8 @@
   <section class="card">
     <div class="tabs">
       <button id="tCreate" class="on">✨ Create</button>
-      <button id="tCombine">🧩 Combine photos</button>
+      <button id="tCombine">🧩 Combine</button>
+      <button id="tEdit">✏️ Edit photo</button>
     </div>
 
     <div id="photoBox" class="hidden">
@@ -116,6 +120,20 @@
 
     <label class="h" id="promptLabel">Describe your image</label>
     <textarea id="prompt" placeholder="A cat astronaut floating above Earth, cinematic lighting"></textarea>
+
+    <div id="quickBox" class="hidden">
+      <label class="h">Quick edits</label>
+      <div class="chips" id="quick">
+        <button class="chip" data-v="Change the background to a sunny tropical beach">🏖 Beach background</button>
+        <button class="chip" data-v="Make it nighttime with city lights">🌃 Night time</button>
+        <button class="chip" data-v="Make it a snowy winter scene">❄️ Winter</button>
+        <button class="chip" data-v="Add cool sunglasses to the person">😎 Add sunglasses</button>
+        <button class="chip" data-v="Turn the photo into an anime drawing">🎌 Anime me</button>
+        <button class="chip" data-v="Turn the photo into a 3D Pixar-style cartoon">🧸 3D cartoon</button>
+        <button class="chip" data-v="Make it look like an old vintage photo">📷 Vintage</button>
+        <button class="chip" data-v="Change the background to outer space with stars and planets">🚀 Space</button>
+      </div>
+    </div>
 
     <label class="h">Style</label>
     <div class="chips" id="styles">
@@ -130,7 +148,8 @@
 
     <label class="h">Shape</label>
     <div class="chips" id="aspects">
-      <button class="chip on" data-v="1:1">Square</button>
+      <button class="chip hidden" data-v="orig" id="origChip">Original</button>
+      <button class="chip on" data-v="1:1" id="squareChip">Square</button>
       <button class="chip" data-v="16:9">Wide</button>
       <button class="chip" data-v="9:16">Tall</button>
     </div>
@@ -157,6 +176,7 @@
     <div class="actions hidden" id="actions">
       <button class="btn" id="dl">⬇ Download</button>
       <button class="btn" id="again">🔁 Try again</button>
+      <button class="btn" id="editIt">✏️ Edit this</button>
       <button class="btn" id="useIt">🧩 Use in Combine</button>
     </div>
     <label class="h">Recent</label>
@@ -166,14 +186,15 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let mode = "create", photos = [], style = "", aspect = "1:1", lastImage = null;
+const store = { combine: [], edit: [] };
+let mode = "create", photos = store.combine, style = "", aspect = "1:1", lastImage = null, editDims = null;
 
 // --- credits ---
 let credits = { left: 10, max: 10, create: 1, combine: 2 };
 const dayKey = () => new Date().toISOString().slice(0,10);
 function localUsed(){ try{ const o = JSON.parse(localStorage.getItem("cp_credits")||"{}"); return o.day === dayKey() ? o.used : 0; }catch{ return 0; } }
 function setLocalUsed(n){ try{ localStorage.setItem("cp_credits", JSON.stringify({ day: dayKey(), used: n })); }catch{} }
-function costNow(){ return mode === "combine" ? credits.combine : credits.create; }
+function costNow(){ return mode === "create" ? credits.create : credits.combine; }
 function renderCredits(bump){
   $("cNum").textContent = credits.left; $("cMax").textContent = credits.max;
   $("cBar").style.width = (100 * credits.left / credits.max) + "%";
@@ -203,22 +224,39 @@ function renderHist(){
 }
 
 // --- tabs ---
+const MODES = {
+  create:  { label: "Describe your image", ph: "A cat astronaut floating above Earth, cinematic lighting",
+             hint: "Tip: be specific — subject, place, lighting, mood." },
+  combine: { label: "How should they be combined? (optional)", ph: "Put the cat from image 0 on the hood of the car in image 1",
+             hint: "Add 2–4 photos. Photos are numbered image 0, image 1, image 2…" },
+  edit:    { label: "What should change?", ph: "Change my shirt to red and put me on a mountain",
+             hint: "Upload 1 photo, then type a change or tap a quick edit." },
+};
+function pickAspect(v){
+  aspect = v;
+  [...$("aspects").children].forEach(c => c.classList.toggle("on", c.dataset.v === v));
+}
 function setMode(m){
-  mode = m;
-  $("tCreate").classList.toggle("on", m==="create");
-  $("tCombine").classList.toggle("on", m==="combine");
-  $("photoBox").classList.toggle("hidden", m==="create");
-  $("promptLabel").textContent = m==="create" ? "Describe your image" : "How should they be combined? (optional)";
-  $("prompt").placeholder = m==="create"
-    ? "A cat astronaut floating above Earth, cinematic lighting"
-    : "Put the person from photo 1 standing next to the car in photo 2 at sunset";
-  $("hint").textContent = m==="create"
-    ? "Tip: be specific — subject, place, lighting, mood."
-    : "Add 2–4 photos to combine, or 1 photo + a prompt to edit it.";
-  renderCredits();
+  mode = m; photos = store[m] || [];
+  ["Create","Combine","Edit"].forEach(t => $("t"+t).classList.toggle("on", m === t.toLowerCase()));
+  $("photoBox").classList.toggle("hidden", m === "create");
+  $("quickBox").classList.toggle("hidden", m !== "edit");
+  $("origChip").classList.toggle("hidden", m !== "edit");
+  if (m === "edit") pickAspect("orig"); else if (aspect === "orig") pickAspect("1:1");
+  $("promptLabel").textContent = MODES[m].label;
+  $("prompt").placeholder = MODES[m].ph;
+  $("hint").textContent = MODES[m].hint;
+  $("drop").textContent = m === "edit" ? "📁 Click or drag your photo here" : "📁 Click or drag photos here";
+  $("file").multiple = m !== "edit";
+  renderThumbs(); renderCredits();
 }
 $("tCreate").onclick = () => setMode("create");
 $("tCombine").onclick = () => setMode("combine");
+$("tEdit").onclick = () => setMode("edit");
+$("quick").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  $("prompt").value = b.dataset.v; $("prompt").focus();
+});
 
 // --- chips ---
 function chipGroup(id, cb){
@@ -241,6 +279,7 @@ function shrink(file){
       c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
+      shrink.lastDims = { w: img.width, h: img.height };
       resolve(c.toDataURL("image/jpeg", 0.85));
     };
     img.onerror = reject; img.src = url;
@@ -248,7 +287,12 @@ function shrink(file){
 }
 async function addFiles(files){
   for (const f of files) {
-    if (!f.type.startsWith("image/") || photos.length >= 4) continue;
+    if (!f.type.startsWith("image/")) continue;
+    if (mode === "edit") {
+      try { store.edit.splice(0, 1, await shrink(f)); editDims = shrink.lastDims; } catch {}
+      break;
+    }
+    if (photos.length >= 4) continue;
     try { photos.push(await shrink(f)); } catch {}
   }
   renderThumbs();
@@ -261,7 +305,8 @@ function renderThumbs(){
     d.querySelector("button").onclick = () => { photos.splice(i,1); renderThumbs(); };
     t.appendChild(d);
   });
-  $("photoLabel").textContent = `Your photos (${photos.length}/4)`;
+  $("thumbs").classList.toggle("single", mode === "edit");
+  $("photoLabel").textContent = mode === "edit" ? "Your photo" : `Your photos (${photos.length}/4)`;
 }
 $("drop").onclick = () => $("file").click();
 $("file").onchange = e => { addFiles(e.target.files); e.target.value = ""; };
@@ -323,10 +368,12 @@ function show(src){
 async function generate(){
   $("err").textContent = "";
   let prompt = $("prompt").value.trim();
-  const imgs = mode === "combine" ? photos : [];
+  const imgs = mode === "create" ? [] : photos;
   if (mode === "create" && !prompt) return $("err").textContent = "Type what you want to see first.";
   if (mode === "combine" && imgs.length === 0) return $("err").textContent = "Add at least one photo.";
-  if (mode === "combine" && imgs.length === 1 && !prompt) return $("err").textContent = "With one photo, tell it how to change it — or add another photo to combine.";
+  if (mode === "combine" && imgs.length === 1) return $("err").textContent = "Add at least 2 photos to combine — or use the ✏️ Edit photo tab for one photo.";
+  if (mode === "edit" && imgs.length === 0) return $("err").textContent = "Upload a photo to edit first.";
+  if (mode === "edit" && !prompt && !style) return $("err").textContent = "Type what should change, or tap a quick edit.";
   if (style) prompt = prompt ? `${prompt}, ${style}` : `in ${style}`;
   const cost = costNow();
   if (credits.left < cost) return $("err").textContent = "Out of credits for today — come back tomorrow for " + credits.max + " more!";
@@ -338,7 +385,7 @@ async function generate(){
     const r = await fetch("/api/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt, aspect,
+        prompt, aspect, dims: aspect === "orig" ? editDims : undefined,
         images: imgs.map(d => ({ mimeType: d.slice(5, d.indexOf(";")), data: d.split(",")[1] }))
       })
     });
@@ -372,6 +419,16 @@ $("go").onclick = generate;
 $("again").onclick = generate;
 $("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) generate(); });
 $("dl").onclick = () => { const a = document.createElement("a"); a.href = lastImage; a.download = "TheCPMachine.png"; a.click(); };
+async function resultAsPhoto(){
+  const blob = await (await fetch(lastImage)).blob();
+  return shrink(new File([blob], "gen.png", { type: blob.type }));
+}
+$("editIt").onclick = async () => {
+  if (!lastImage) return;
+  store.edit.splice(0, 1, await resultAsPhoto()); editDims = shrink.lastDims;
+  $("prompt").value = ""; setMode("edit");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
 $("useIt").onclick = async () => {
   if (!lastImage) return;
   setMode("combine");
