@@ -19,24 +19,22 @@ const spent = new Map();
 let siteCombines = { day: "", n: 0 };
 const today = () => new Date().toISOString().slice(0, 10);
 // Credits are counted PER DEVICE (each browser gets its own ID), so phones/laptops
-// on the same Wi-Fi each get their own credits. A household cap per internet
-// address stops someone from getting unlimited credits by clearing their browser.
-const HOUSEHOLD_CAP = parseInt(process.env.HOUSEHOLD_CAP || String(CREDITS_PER_DAY * 4), 10);
+// on the same Wi-Fi each get their own credits.
 const keyFor = (k) => k + "|" + today();
 const usedKey = (k) => spent.get(keyFor(k)) || 0;
 const used = (who) => usedKey(who.dev);
-const left = (who) => Math.max(0, Math.min(CREDITS_PER_DAY - usedKey(who.dev), HOUSEHOLD_CAP - usedKey(who.house)));
+const left = (who) => Math.max(0, CREDITS_PER_DAY - usedKey(who.dev));
 function addKey(k, n) { spent.set(keyFor(k), Math.max(0, usedKey(k) + n)); }
 function charge(who, n) {
   if (spent.size > 10000) spent.clear();
-  addKey(who.dev, n); addKey(who.house, n);
+  addKey(who.dev, n);
 }
 // Create images are loaded by the visitor's browser; if that fails it can ask for a refund.
 const tickets = new Map(); // ticket -> { ip, cost, t }
 function newTicket(who, cost) {
   if (tickets.size > 5000) tickets.clear();
   const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  tickets.set(id, { dev: who.dev, house: who.house, cost, t: Date.now() });
+  tickets.set(id, { dev: who.dev, cost, t: Date.now() });
   return id;
 }
 
@@ -178,7 +176,7 @@ function pollinationsUrl(prompt, aspect) {
 export default async function handler(req, res) {
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "anon";
   const devId = String(req.headers["x-cp-device"] || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 64);
-  const who = { dev: devId ? "d:" + devId : "ip:" + ip, house: "h:" + ip };
+  const who = { dev: devId ? "d:" + devId : "ip:" + ip };
   const info = () => ({ credits: left(who), max: CREDITS_PER_DAY, costCreate: COST_CREATE, costCombine: COST_COMBINE });
 
   if (req.method === "GET") return res.status(200).json(info());

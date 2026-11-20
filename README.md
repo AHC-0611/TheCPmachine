@@ -16,7 +16,7 @@
 Create still works without keys (free backup generator). Combine needs the Cloudflare keys.
 
 ## Credits
-- Every device gets its own 10 credits a day (each browser has its own ID); one home internet connection is capped at 40/day (`HOUSEHOLD_CAP`)
+- Every device gets its own 10 credits a day (each browser has its own ID)
 - Every visitor gets 10 credits a day (resets at midnight UTC, which is 7 PM Eastern).
 - Create = 1 credit (uses the free generator first). Combine/Edit = 2 credits (Cloudflare FLUX.2).
 - Sized for about 25 people a day: 25 × 10 = 250 credits.
